@@ -21,7 +21,6 @@
 #include <cstring>
 #include <thread>
 #include <chrono>
-//#include <algorithm>
 
 #include "Serial.hpp"
 
@@ -53,23 +52,8 @@ public:
 
 	bool open()
 	{
-		// search device
-		bool found = false;
-		auto list = getSerialList();
-		for (const auto p : list) {
-			if (this->portname == p)
-				found = true;
-		}
-
-		// device not found
-		if (!found) {
-			return false;
-		}
-
-		Serial::SerialConfig serialConfig = { CBR_9600, 8, NOPARITY, ONESTOPBIT };
-
 		// open error
-		if (!this->serial.Open(this->portname, serialConfig)) {
+		if (!this->serial.Open(this->portname)) {
 			return false;
 		}
 
@@ -93,12 +77,13 @@ public:
 
 		char data[9] = { 0 };
 		int pos = 0;
+
 		while (this->running)
 		{
-			auto v = this->serial.Read();
-			for (auto c : v) {
+
+			auto vals = this->serial.Read();
+			for (auto c : vals) {
 				if (c == 0x46) { // F
-					char data[9] = { 0 };
 					pos = 0;
 				}
 				data[pos++] = c;
@@ -111,13 +96,16 @@ public:
 
 	void createParams(char* data)
 	{
-		std::string time_str(data, sizeof(data) / sizeof(data[0]));
-		this->chanValues[0] = std::stof(time_str.substr(3, 2));
-		this->chanValues[1] = std::stof(time_str.substr(5, 2));
+		std::string time_str(data, 8);
+
+		this->chanValues[0] = std::atof(time_str.substr(3, 2).c_str());
+		this->chanValues[1] = std::atof(time_str.substr(5, 2).c_str());
 	}
 
 	void stop()
 	{
+		std::cout << "thread stop" << std::endl;
+
 		this->running = false;
 		if (recv_thread.joinable())
 			recv_thread.join();
@@ -138,7 +126,7 @@ public:
 	bool getOutputInfo(CHOP_OutputInfo* info, const OP_Inputs* inputs, void* reserved1)
 	{
 		info->numSamples = 1;
-		info->numChannels = this->chanNames.size();
+		info->numChannels = (int32_t)this->chanNames.size();
 		return true;
 	}
 
@@ -168,7 +156,7 @@ public:
 
 		for (int i = 0; i < this->chanNames.size(); i++) {
 			for (int j = 0; j < output->numSamples; j++) {
-				output->channels[i][j] = this->chanValues.at(i);
+				output->channels[i][j] = (float)this->chanValues.at(i);
 			}
 		}
 	}
@@ -191,6 +179,10 @@ extern "C"
 	DLLEXPORT void FillCHOPPluginInfo(CHOP_PluginInfo* info)
 	{
 		info->apiVersion = CHOPCPlusPlusAPIVersion;
+		info->customOPInfo.opType->setString("Climbingtimer");
+		info->customOPInfo.opLabel->setString("Climbing Timer");
+		info->customOPInfo.authorName->setString("Akira Kamikura");
+		info->customOPInfo.authorEmail->setString("akira.kamikura@gmail.com");
 	}
 
 	DLLEXPORT CHOP_CPlusPlusBase* CreateCHOPInstance(const OP_NodeInfo* info)
